@@ -1,0 +1,48 @@
+package gr1mly4memes.parallix.mixin.dimension_change.departure.triggers;
+
+import com.llamalad7.mixinextras.sugar.Local;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.NetherPortalBlock;
+import net.minecraft.world.level.block.Portal;
+import net.minecraft.world.level.portal.TeleportTransition;
+import gr1mly4memes.parallix.common.dimension_change.DimensionChangeHelper;
+import gr1mly4memes.parallix.common.mixin_support.interfaces.MinecraftServerExtended;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+@Mixin(NetherPortalBlock.class)
+public abstract class NetherPortalBlockMixin implements Portal {
+
+    /**
+     * Danger Zone: Accessing worlds from multiple threads. The following mixins ensure that (if no other mods interfere)
+     * the world's mutable data is only accessed from its own thread.
+     */
+    @Redirect(
+            method = "getPortalDestination(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/Entity;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/portal/TeleportTransition;",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;getLevel(Lnet/minecraft/resources/ResourceKey;)Lnet/minecraft/server/level/ServerLevel;")
+    )
+    private ServerLevel getWorldWithoutExclusiveAccess(MinecraftServer server, ResourceKey<Level> key) {
+        return ((MinecraftServerExtended) server).worldthreader$getLevelUnsynchronized(key);
+    }
+
+    @Inject(
+            method = "getPortalDestination(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/Entity;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/portal/TeleportTransition;",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/server/level/ServerLevel;getWorldBorder()Lnet/minecraft/world/level/border/WorldBorder;"
+            ), cancellable = true
+    )
+    private void handleOffthreadTeleport(ServerLevel originWorld, Entity entity, BlockPos pos, CallbackInfoReturnable<TeleportTransition> cir, @Local(ordinal = 1) ServerLevel targetWorld) {
+        if (targetWorld != null && DimensionChangeHelper.shouldConvertSelfToTeleportedEntityInfo(targetWorld)) {
+            cir.setReturnValue(DimensionChangeHelper.getNonPassengerDummyTeleportTarget(targetWorld));
+        }
+    }
+}

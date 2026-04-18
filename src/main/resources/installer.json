@@ -1,0 +1,21 @@
+{
+  "installer": {
+    "minecraft": "26.1.2",
+    "fabricLoader": "0.19.2",
+    "fabricLoaderHash": "cc647a5b22dbc49b9a3267cebcee25fc4882b108"
+  },
+  "libraries": {
+    "org.jline:jline-terminal:3.30.6": "f10df14d2c96a8a4c758d3c4d325d42ae5d459b6",
+    "org.jline:jline-terminal-jansi:3.30.6": "332005d44f4845772c6f7f591b24bb88c3b1bdb4",
+    "net.minecrell:terminalconsoleappender:1.4.0": "70375667b84cee16ca5fa66258f7f6bddca24869",
+    "org.apache.logging.log4j:log4j-iostreams:2.25.3": "e1e89cd84152e4078a2b7a2e5249ed9b38f6db8e",
+    "org.projectlombok:lombok:1.18.44": "503fd0b002dbb237fa4656cf4b8021666a8aebac",
+    "com.google.code.findbugs:jsr305:3.0.2": "25ea2e8b0c338a877313bd4672d3fe056ea78f0d"
+  },
+  "fabricExtra": {
+    "org.jline:jline-reader:3.30.6": "a0919d426fb4db45c3d228eacea38fc696731b25",
+    "org.fusesource.jansi:jansi:2.4.2": "ba7387c31622c6650b83edba1bbb115f1fe462ba",
+    "net.fabricmc.fabric-api:fabric-api:0.146.0+26.1.2": "9476711a2863670fc038e084f295269706f706a4",
+    "me.lucko:fabric-permissions-api:0.7.0": "8c536967c417676af59b4574fc079444a19c87fd"
+  }
+}

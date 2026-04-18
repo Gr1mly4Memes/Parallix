@@ -1,0 +1,138 @@
+package gr1mly4memes.parallix.mixin.dimension_change.departure.triggers.ender_pearl;
+
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityReference;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrowableItemProjectile;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
+import net.minecraft.world.level.Level;
+import gr1mly4memes.parallix.common.mixin_support.interfaces.MinecraftServerExtended;
+import gr1mly4memes.parallix.common.thread.WorldThreadingManager;
+import org.jetbrains.annotations.Nullable;
+import org.objectweb.asm.Opcodes;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Constant;
+import org.spongepowered.asm.mixin.injection.Redirect;
+
+import java.util.UUID;
+
+@Mixin(ThrownEnderpearl.class)
+public abstract class ThrownEnderpearlMixin extends ProjectileMixin {
+
+    @Unique
+    private boolean hasServerPlayerAsOwner;
+
+
+    @Shadow
+    public abstract @Nullable Entity getOwner();
+
+    public ThrownEnderpearlMixin(EntityType<? extends ThrowableItemProjectile> entityType, Level level) {
+        super(entityType, level);
+    }
+
+    @Override
+    public void setCachedOwnerWrapped(Projectile theEnderPearl, @Nullable EntityReference<Entity> entityReference) {
+        EntityReference<Entity> previousOwner = this.owner;
+        super.setCachedOwnerWrapped(theEnderPearl, entityReference);
+        if (previousOwner == entityReference) {
+            return;
+        }
+        //TODO why are we not checking is tick multithreaded here?, at least document why
+        Entity newOwner = this.getOwner();
+        boolean isPlayer = newOwner instanceof ServerPlayer;
+        this.hasServerPlayerAsOwner = isPlayer;
+        if (isPlayer) {
+            //Register the enderpearl more reliably than vanilla. Then omit redundant registering during the enderpearl tick which would require exclusive world access
+            ((ServerPlayer) newOwner).registerEnderPearl((ThrownEnderpearl) (Object) this);
+        }
+    }
+
+
+    @Redirect(
+            method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl;findOwnerIncludingDeadPlayer(Lnet/minecraft/server/level/ServerLevel;Ljava/util/UUID;)Lnet/minecraft/world/entity/Entity;")
+    )
+    private Entity avoidGettingOwner(ServerLevel serverLevel, UUID uUID) {
+        if (this.level() instanceof ServerLevel level && ((MinecraftServerExtended) level.getServer()).worldthreader$isTickMultithreaded()) {
+            return null;
+        }
+        return this.getOwner();
+    }
+
+    @WrapOperation(
+            method = "tick",
+            constant = {
+                    @Constant(classValue = ServerPlayer.class, ordinal = 0), //Ordinal 1 targets CHECKCAST for some reason
+                    @Constant(classValue = ServerPlayer.class, ordinal = 2)
+            }
+    )
+    private boolean handleNullPlayer(Object object, Operation<Boolean> original) {
+        if (object == null) {
+            return this.hasServerPlayerAsOwner;
+        }
+        return original.call(object);
+    }
+
+    @WrapOperation(
+            method = "tick",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;isAlive()Z")
+    )
+    private boolean handleNullPlayer2(Entity instance, Operation<Boolean> original) {
+        if (instance == null && this.hasServerPlayerAsOwner && this.owner != null) {
+            WorldThreadingManager worldThreadingManager = WorldThreadingManager.get((ServerLevel) this.level());
+            if (worldThreadingManager != null && worldThreadingManager.isMultiThreadedPhase()) {
+                return worldThreadingManager.wasPlayerAlive(this.owner.getUUID(), true);
+            }
+        }
+        return original.call(instance);
+    }
+
+    @WrapOperation(
+            method = "tick",
+            at = @At(value = "FIELD", target = "Lnet/minecraft/server/level/ServerPlayer;wonGame:Z", opcode = Opcodes.GETFIELD)
+    )
+    private boolean handleNullPlayer2(ServerPlayer instance, Operation<Boolean> original) {
+        if (instance == null && this.hasServerPlayerAsOwner && this.owner != null) {
+            WorldThreadingManager worldThreadingManager = WorldThreadingManager.get((ServerLevel) this.level());
+            if (worldThreadingManager != null && worldThreadingManager.isMultiThreadedPhase()) {
+                return worldThreadingManager.wasPlayerWonGame(this.owner.getUUID());
+            }
+        }
+        return original.call(instance);
+    }
+
+
+    @WrapOperation(
+            method = "tick",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;level()Lnet/minecraft/server/level/ServerLevel;")
+    )
+    private ServerLevel getServerLevel(ServerPlayer instance, Operation<ServerLevel> original) {
+        if (instance == null) {
+            return (ServerLevel) this.level();
+        }
+        return original.call(instance);
+    }
+
+    @WrapOperation(
+            method = "tick",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;registerAndUpdateEnderPearlTicket(Lnet/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl;)J")
+    )
+    private long registerAndUpdate(ServerPlayer instance, ThrownEnderpearl thrownEnderpearl, Operation<Long> original) {
+        if (instance == null) {
+            if (thrownEnderpearl.level() instanceof ServerLevel serverLevel) {
+                serverLevel.resetEmptyTime();
+                return ServerPlayer.placeEnderPearlTicket(serverLevel, thrownEnderpearl.chunkPosition()) - 1L;
+            } else {
+                return 0L;
+            }
+        }
+        return original.call(instance, thrownEnderpearl);
+    }
+}

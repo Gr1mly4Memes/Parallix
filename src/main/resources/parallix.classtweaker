@@ -1,0 +1,18 @@
+classTweaker v1	official
+# Parallix
+accessible class net/minecraft/world/entity/animal/fox/Fox$FoxBreedGoal
+
+# Noisium
+accessible field net/minecraft/world/level/chunk/LevelChunkSection states Lnet/minecraft/world/level/chunk/PalettedContainer;
+accessible field net/minecraft/world/level/chunk/LevelChunkSection nonEmptyBlockCount S
+accessible field net/minecraft/world/level/chunk/LevelChunkSection tickingFluidCount S
+accessible field net/minecraft/world/level/chunk/LevelChunkSection tickingBlockCount S
+
+# WorldThreader
+accessible class net/minecraft/server/level/ServerChunkCache$MainThreadExecutor
+accessible class net/minecraft/world/scores/PlayerScores
+accessible method net/minecraft/world/level/block/NetherPortalBlock getDimensionTransitionFromExit (Lnet/minecraft/world/entity/Entity;Lnet/minecraft/core/BlockPos;Lnet/minecraft/util/BlockUtil$FoundRectangle;Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/level/portal/TeleportTransition$PostTeleportTransition;)Lnet/minecraft/world/level/portal/TeleportTransition;
+accessible method net/minecraft/world/entity/Entity teleportCrossDimension (Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/level/portal/TeleportTransition;)Lnet/minecraft/world/entity/Entity;
+accessible field net/minecraft/server/level/ServerPlayer isChangingDimension Z
+accessible field net/minecraft/server/level/ServerPlayer enderPearls Ljava/util/Set;
+accessible field net/minecraft/world/entity/projectile/Projectile owner Lnet/minecraft/world/entity/EntityReference;
