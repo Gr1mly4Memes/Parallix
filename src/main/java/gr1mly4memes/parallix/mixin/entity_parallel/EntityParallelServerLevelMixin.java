@@ -1,6 +1,7 @@
 package gr1mly4memes.parallix.mixin.entity_parallel;
 
 import gr1mly4memes.parallix.WorldThreaderMod;
+import gr1mly4memes.parallix.common.entity_parallel.EntityActivationRange;
 import gr1mly4memes.parallix.common.entity_parallel.EntityParallelProcessor;
 import gr1mly4memes.parallix.common.mixin_support.interfaces.MinecraftServerExtended;
 import net.minecraft.server.level.ServerLevel;
@@ -8,6 +9,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.entity.EntityTickList;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
@@ -25,6 +27,9 @@ public abstract class EntityParallelServerLevelMixin {
     @Shadow
     @org.spongepowered.asm.mixin.Final
     public EntityTickList entityTickList;
+
+    @Unique
+    private static final ThreadLocal<List<Entity>> ENTITY_TICK_BUFFER = ThreadLocal.withInitial(ArrayList::new);
 
     /**
      * Redirect the EntityTickList.forEach call to use parallel processing.
@@ -50,17 +55,21 @@ public abstract class EntityParallelServerLevelMixin {
             return;
         }
 
-        // Build list of entities to tick
-        List<Entity> toTick = new ArrayList<>();
+        // Build list of entities to tick using reusable ThreadLocal buffer
+        List<Entity> toTick = ENTITY_TICK_BUFFER.get();
+        toTick.clear();
         entityTickList.forEach(entity -> {
             if (entity == null || entity.isRemoved()) return;
 
             // Skip frozen entities
             if (level.tickRateManager().isEntityFrozen(entity)) return;
 
-            // Skip entities outside ticking range
+            // Skip entities outside vanilla ticking range
             if (!level.getChunkSource().chunkMap.getDistanceManager()
                     .inEntityTickingRange(entity.chunkPosition().pack())) return;
+
+            // Entity Activation Range (EAR): skip entities outside per-type distance from players
+            if (!EntityActivationRange.checkIfActive(entity, level)) return;
 
             // Handle passengers
             Entity vehicle = entity.getVehicle();

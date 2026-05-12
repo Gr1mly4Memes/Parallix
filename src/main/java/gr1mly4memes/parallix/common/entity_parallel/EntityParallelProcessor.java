@@ -3,11 +3,10 @@ package gr1mly4memes.parallix.common.entity_parallel;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.vehicle.boat.ChestBoat;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.monster.Shulker;
 import net.minecraft.world.entity.projectile.Projectile;
-import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
 import net.minecraft.world.entity.vehicle.boat.Boat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +17,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.IntStream;
 
 /**
  * Parallel entity processor based on Async's ParallelProcessor.
@@ -28,11 +26,12 @@ public class EntityParallelProcessor {
     private static final Logger LOGGER = LoggerFactory.getLogger(EntityParallelProcessor.class);
 
     // Entity types that must be ticked synchronously due to thread-safety issues
+    // Use a set of exact classes for fast O(1) lookup — subclasses are checked via instanceof in shouldTickSynchronously
     private static final Set<Class<?>> BLOCKED_ENTITIES = Set.of(
             FallingBlockEntity.class,
             Shulker.class,
-            AbstractBoat.class,
-            Boat.class
+            Boat.class,
+            ChestBoat.class
     );
 
     // Blacklisted specific entities (runtime configurable)
@@ -71,7 +70,7 @@ public class EntityParallelProcessor {
                 new LinkedBlockingQueue<>(),
                 threadFactory
         );
-        pool.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
+        pool.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         pool.allowCoreThreadTimeOut(false);
         pool.prestartAllCoreThreads();
 
@@ -96,59 +95,46 @@ public class EntityParallelProcessor {
             return;
         }
 
-        final int chunkSize = (entities.size() + poolSize - 1) / poolSize;
-        final List<Future<Void>> futures = new ArrayList<>();
-
-        // Split entities into chunks and submit for parallel processing
-        for (int i = 0; i < entities.size(); i += chunkSize) {
-            final List<Entity> chunk = entities.subList(i, Math.min(i + chunkSize, entities.size()));
-            Future<Void> future = executor.submit(() -> {
-                for (Entity entity : chunk) {
-                    if (!shouldTickSynchronously(entity)) {
-                        tickEntity(world, entity, true);
-                    }
-                }
-                return null;
-            });
-            futures.add(future);
+        // Separate sync and async entities in a single pass
+        List<Entity> syncEntities = new ArrayList<>();
+        List<Entity> asyncEntities = new ArrayList<>(entities.size());
+        for (Entity entity : entities) {
+            if (shouldTickSynchronously(entity)) {
+                syncEntities.add(entity);
+            } else {
+                asyncEntities.add(entity);
+            }
         }
 
-        // Tick entities that must be processed synchronously
-        entities.stream()
-                .filter(EntityParallelProcessor::shouldTickSynchronously)
-                .forEach(e -> tickEntity(world, e, false));
+        if (asyncEntities.isEmpty()) {
+            syncEntities.forEach(e -> tickEntity(world, e, false));
+            return;
+        }
+
+        final int chunkSize = Math.max(1, (asyncEntities.size() + poolSize - 1) / poolSize);
+        final CompletableFuture<?>[] futures = new CompletableFuture[(asyncEntities.size() + chunkSize - 1) / chunkSize];
+
+        // Split async entities into chunks and submit for parallel processing
+        int futureIndex = 0;
+        for (int i = 0; i < asyncEntities.size(); i += chunkSize) {
+            final List<Entity> chunk = asyncEntities.subList(i, Math.min(i + chunkSize, asyncEntities.size()));
+            futures[futureIndex++] = CompletableFuture.runAsync(() -> {
+                for (Entity entity : chunk) {
+                    tickEntity(world, entity, true);
+                }
+            }, executor);
+        }
+
+        // Tick sync entities on the current thread while parallel work runs
+        syncEntities.forEach(e -> tickEntity(world, e, false));
 
         // Wait for all parallel tasks to complete
-        waitForFutures(futures);
-    }
-
-    /**
-     * Wait for all futures to complete while pumping chunk tasks.
-     */
-    private static void waitForFutures(List<Future<Void>> futures) {
-        boolean allDone;
-        do {
-            allDone = futures.stream().allMatch(Future::isDone);
-            if (!allDone) {
-                // Pump chunk tasks to prevent deadlock
-                boolean pumped = false;
-                // Note: We can't access server here easily, so we just spin-wait
-                if (!pumped) {
-                    Thread.onSpinWait();
-                }
-            }
-        } while (!allDone);
-
-        // Check for exceptions
-        for (Future<Void> future : futures) {
-            try {
-                future.get();
-            } catch (ExecutionException e) {
-                LOGGER.error("Error during async entity tick", e.getCause());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
+        try {
+            CompletableFuture.allOf(futures).join();
+        } catch (CompletionException e) {
+            LOGGER.error("Error during async entity tick batch", e.getCause());
+        } catch (Exception e) {
+            LOGGER.error("Unexpected error during async entity tick batch", e);
         }
     }
 
@@ -158,16 +144,19 @@ public class EntityParallelProcessor {
      * @return true if the entity should be ticked synchronously
      */
     public static boolean shouldTickSynchronously(Entity entity) {
-        if (isShuttingDown || entity.level().isClientSide() || entity.portalProcess != null) {
+        if (isShuttingDown || entity.portalProcess != null) {
             return true;
         }
 
-        UUID entityId = entity.getUUID();
+        if (entity instanceof Projectile || entity instanceof ServerPlayer) {
+            return true;
+        }
 
-        return entity instanceof Projectile
-                || entity instanceof ServerPlayer
-                || BLOCKED_ENTITIES.contains(entity.getClass())
-                || BLACKLISTED_ENTITIES.contains(entityId);
+        if (entity instanceof Boat || entity instanceof FallingBlockEntity || entity instanceof Shulker) {
+            return true;
+        }
+
+        return BLACKLISTED_ENTITIES.contains(entity.getUUID());
     }
 
     /**

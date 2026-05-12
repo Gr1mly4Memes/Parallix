@@ -4,7 +4,9 @@ import com.google.common.collect.Maps;
 import gr1mly4memes.parallix.WorldThreaderMod;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
@@ -45,9 +47,21 @@ public class BrainMixin<E extends LivingEntity> {
     @Unique
     private final Object writeLock = new Object();
 
-    @Inject(method = "tick", at = @At("HEAD"))
+    @Unique
+    private int dabSkipCounter = 0;
+
+    @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
     private void buildSnapshot(ServerLevel level, E body, CallbackInfo ci) {
         if (!WorldThreaderMod.ENTITY_PARALLELISM_ENABLED) return;
+
+        // Dynamic Brain Activation: reduce brain tick rate based on player distance
+        int dabRate = getDabRate(body, level);
+        if (dabRate > 1) {
+            if (dabSkipCounter++ % dabRate != 0) {
+                ci.cancel();
+                return;
+            }
+        }
 
         if (needsRebuild || snapshot == null) {
             synchronized (writeLock) {
@@ -59,6 +73,20 @@ public class BrainMixin<E extends LivingEntity> {
         }
 
         inTick = true;
+    }
+
+    @Unique
+    private static int getDabRate(LivingEntity entity, ServerLevel level) {
+        int closest = Integer.MAX_VALUE;
+        BlockPos entityPos = entity.blockPosition();
+        for (ServerPlayer player : level.players()) {
+            int dist = entityPos.distManhattan(player.blockPosition());
+            if (dist < closest) closest = dist;
+        }
+        if (closest <= 16) return 1;  // full rate
+        if (closest <= 24) return 2;  // every 2 ticks
+        if (closest <= 32) return 4;  // every 4 ticks
+        return Integer.MAX_VALUE;      // no brain ticking (EAR already skips, but safety net)
     }
 
     @Inject(method = "tick", at = @At("RETURN"))

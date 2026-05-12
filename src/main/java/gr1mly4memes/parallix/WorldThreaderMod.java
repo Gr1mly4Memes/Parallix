@@ -21,7 +21,7 @@ public class WorldThreaderMod implements ModInitializer {
 	public static final String NOISIUM_MOD_NAME = "Noisium";
 	public static final Logger NOISIUM_LOGGER = LoggerFactory.getLogger(NOISIUM_MOD_ID);
 	
-	public static boolean ENTITY_PARALLELISM_ENABLED = false;
+	public static volatile boolean ENTITY_PARALLELISM_ENABLED = false;
 	public static int ENTITY_PARALLELISM_THREADS = -1; // -1 = auto-detect
 
 	@Override
@@ -45,8 +45,8 @@ public class WorldThreaderMod implements ModInitializer {
         // Initialize entity parallel processor on server start
         ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             if (ENTITY_PARALLELISM_ENABLED) {
-                int threads = ENTITY_PARALLELISM_THREADS <= 0 
-                        ? Runtime.getRuntime().availableProcessors() 
+                int threads = ENTITY_PARALLELISM_THREADS <= 0
+                        ? Math.max(1, Runtime.getRuntime().availableProcessors() - 2)
                         : ENTITY_PARALLELISM_THREADS;
                 EntityParallelProcessor.setupThreadPool(threads, WorldThreaderMod.class.getClassLoader());
                 LOGGER.info("Entity parallelism enabled with {} threads", threads);

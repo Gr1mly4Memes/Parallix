@@ -110,7 +110,8 @@
     "threadsafe_scoreboard.atomic_arithmetic.Scoreboard$ScoreAccessMixin",
     "threadsafe_scoreboard.teams.PlayerTeamMixin",
     "threadsafe_scoreboard.teams.ScoreboardMixin",
-    "threadsafe_scoreboard.teams.ServerScoreboardMixin"
+    "threadsafe_scoreboard.teams.ServerScoreboardMixin",
+    "hopper.HopperBlockEntityMixin"
   ],
   "client": [],
   "server": [],

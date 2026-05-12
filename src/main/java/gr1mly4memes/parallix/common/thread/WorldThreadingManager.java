@@ -32,7 +32,7 @@ import static gr1mly4memes.parallix.init.ModGameRules.INITIAL_FALSE;
 
 public class WorldThreadingManager {
 
-	public static boolean DEBUG = INITIAL_FALSE; //This should not be static, but it is used for debugging only
+	public static volatile boolean DEBUG = INITIAL_FALSE; //Debug flag, synced from gamerule
 
 	private final MinecraftServer server;
 	private final Phaser tickBarrier;

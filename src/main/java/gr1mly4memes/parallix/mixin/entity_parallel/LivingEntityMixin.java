@@ -39,7 +39,7 @@ public abstract class LivingEntityMixin extends Entity {
     final private Map<Holder<MobEffect>, MobEffectInstance> activeEffects = new ConcurrentHashMap<>();
 
     @Unique
-    private static final Object lock = new Object();
+    private final Object lock = new Object();
 
     public LivingEntityMixin(EntityType<?> type, Level world) {
         super(type, world);
